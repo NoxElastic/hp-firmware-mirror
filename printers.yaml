@@ -1,0 +1,52 @@
+printers:
+  - name: "HP LaserJet E78223-E78228"
+    series_oid: 31414229
+    enabled: true
+
+  - name: "HP LaserJet E87640-E87660"
+    series_oid: 12531076
+    enabled: true
+
+  - name: "HP LaserJet E82540-E82560"
+    series_oid: 12530949
+    enabled: true
+
+  - name: "HP PageWide E77650-E77660"
+    series_oid: 12261944
+    enabled: true
+
+  - name: "HP LaserJet E47528"
+    series_oid: 29256425
+    enabled: true
+
+  - name: "HP LaserJet E77822-E77830"
+    series_oid: 12531055
+    enabled: true
+
+  - name: "HP PageWide E586"
+    series_oid: 7835692
+    enabled: true
+
+  - name: "HP LaserJet E60155-E60175"
+    series_oid: 20063521
+    enabled: true
+
+  - name: "HP LaserJet E57540"
+    series_oid: 20008705
+    enabled: true
+
+  - name: "HP LaserJet M776"
+    series_oid: 21298755
+    enabled: true
+
+  - name: "HP LaserJet M607-M609"
+    series_oid: 9364932
+    enabled: true
+
+  - name: "HP LaserJet E78625-E78635"
+    series_oid: 38348112
+    enabled: true
+
+  - name: "HP LaserJet M480"
+    series_oid: 29256416
+    enabled: true
