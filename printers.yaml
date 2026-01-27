@@ -47,6 +47,3 @@ printers:
     series_oid: 38348112
     enabled: true
 
-  - name: "HP LaserJet M480"
-    series_oid: 29256416
-    enabled: true
