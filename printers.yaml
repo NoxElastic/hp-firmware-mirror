@@ -43,3 +43,7 @@ printers:
     series_oid: 9364932
     enabled: true
 
+  - name: "HP LaserJet E78625-E78635"
+    series_oid: 38348112
+    enabled: true
+
