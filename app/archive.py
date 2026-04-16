@@ -3,19 +3,17 @@ import shutil
 
 def snapshot_current_to_old(printer_dir: Path, version: str) -> Path | None:
     """
-    Copies the contents of current/ into old/<version>/.
-    Does NOT remove anything from current/.
-    Skips firmware.zip and VERSION.
+    Copies the current extracted firmware contents from current/
+    into old/<version>/.
+    Does NOT delete anything from current/.
+    Skips firmware.zip.
     """
     current_dir = printer_dir / "current"
 
     if not current_dir.exists():
         return None
 
-    items_to_copy = [
-        item for item in current_dir.iterdir()
-        if item.name not in {"firmware.zip", "VERSION"}
-    ]
+    items_to_copy = [item for item in current_dir.iterdir() if item.name != "firmware.zip"]
     if not items_to_copy:
         return None
 
