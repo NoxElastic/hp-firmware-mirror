@@ -78,7 +78,7 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
     current_dir = printer_dir / "current"
     current_dir.mkdir(parents=True, exist_ok=True)
 
-    # Always start with a clean current/ before downloading a new version
+    # Start clean before downloading the new version
     clear_current_dir(current_dir)
 
     # Download to current/firmware.zip
@@ -103,13 +103,10 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
         print(f"[WARN] {name}: extract/cleanup failed ({type(e).__name__}: {e})")
         return
 
-    # Save a versioned snapshot immediately after successful extraction
+    # Copy the fully extracted current firmware into old/<version>/
     archived_to = snapshot_current_to_old(printer_dir, version)
     if archived_to:
         print(f"[INFO] {name}: snapshotted extracted firmware -> {archived_to}")
-
-    # Mark what version is currently active in current/
-    (current_dir / "VERSION").write_text(version, encoding="utf-8")
 
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     insert_firmware(
@@ -183,4 +180,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    
