@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import shutil
 import time
 from pathlib import Path
 
@@ -32,6 +33,26 @@ def build_session() -> requests.Session:
     })
     return s
 
+def get_current_version(current_dir: Path) -> str | None:
+    version_file = current_dir / "VERSION"
+    if version_file.exists():
+        version = version_file.read_text(encoding="utf-8").strip()
+        if version:
+            return version
+
+    dirs = [p.name for p in current_dir.iterdir() if p.is_dir()]
+    if len(dirs) == 1:
+        return dirs[0]
+
+    return None
+
+def clear_current_dir(current_dir: Path) -> None:
+    for item in current_dir.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink(missing_ok=True)
+
 def check_one(printer: dict, session: requests.Session, db_con, base_data: Path) -> None:
     name = printer.get("name", "UNKNOWN")
     series_oid = printer.get("series_oid")
@@ -57,15 +78,20 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
         print(f"[OK]   {name}: no change (latest link already stored)")
         return
 
-    version = firmware_version_from_url(chosen_url) or "unknown"
+    new_version = firmware_version_from_url(chosen_url) or "unknown"
     printer_dir = base_data / "firmware" / "hp" / safe_folder(name)
     current_dir = printer_dir / "current"
     current_dir.mkdir(parents=True, exist_ok=True)
 
-    # Archive only extracted content to old/<version>/
-    archived_to = archive_extracted_only(printer_dir, version)
-    if archived_to:
-        print(f"[INFO] {name}: archived extracted firmware -> {archived_to}")
+    # Archive current extracted content using the version already present in current/
+    current_version = get_current_version(current_dir)
+    if current_version:
+        archived_to = archive_extracted_only(printer_dir, current_version)
+        if archived_to:
+            print(f"[INFO] {name}: archived extracted firmware -> {archived_to}")
+
+    # Ensure current/ is empty before downloading/extracting the new firmware
+    clear_current_dir(current_dir)
 
     # Download to current/firmware.zip
     try:
@@ -82,11 +108,11 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
 
     # Extract and remove .txt
     try:
-
         safe_extract_zip(zip_path, current_dir)
         removed = remove_txt_files(current_dir)
 
         zip_path.unlink(missing_ok=True)
+        (current_dir / "VERSION").write_text(new_version, encoding="utf-8")
 
     except Exception as e:
         print(f"[WARN] {name}: extract/cleanup failed ({type(e).__name__}: {e})")
