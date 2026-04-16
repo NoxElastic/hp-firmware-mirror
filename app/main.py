@@ -12,17 +12,20 @@ from db import connect, ensure_printer, has_url, insert_firmware
 from download import download_stream
 from extract import safe_extract_zip, remove_txt_files
 from hp_swd_api import discover_firmware_urls_swd
-from archive import archive_extracted_only
+from archive import snapshot_current_to_old
 from hp import pick_best_link, firmware_version_from_url
 
 DEFAULT_INTERVAL_SECONDS = 6 * 60 * 60  # 6 hours
 
+
 def safe_folder(name: str) -> str:
     return "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name).strip("_")
+
 
 def load_printers(config_path: Path) -> list[dict]:
     data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     return [p for p in data.get("printers", []) if p.get("enabled", True)]
+
 
 def build_session() -> requests.Session:
     s = requests.Session()
@@ -33,25 +36,17 @@ def build_session() -> requests.Session:
     })
     return s
 
-def get_current_version(current_dir: Path) -> str | None:
-    version_file = current_dir / "VERSION"
-    if version_file.exists():
-        version = version_file.read_text(encoding="utf-8").strip()
-        if version:
-            return version
-
-    dirs = [p.name for p in current_dir.iterdir() if p.is_dir()]
-    if len(dirs) == 1:
-        return dirs[0]
-
-    return None
 
 def clear_current_dir(current_dir: Path) -> None:
+    if not current_dir.exists():
+        return
+
     for item in current_dir.iterdir():
         if item.is_dir():
             shutil.rmtree(item)
         else:
             item.unlink(missing_ok=True)
+
 
 def check_one(printer: dict, session: requests.Session, db_con, base_data: Path) -> None:
     name = printer.get("name", "UNKNOWN")
@@ -78,19 +73,12 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
         print(f"[OK]   {name}: no change (latest link already stored)")
         return
 
-    new_version = firmware_version_from_url(chosen_url) or "unknown"
+    version = firmware_version_from_url(chosen_url) or "unknown"
     printer_dir = base_data / "firmware" / "hp" / safe_folder(name)
     current_dir = printer_dir / "current"
     current_dir.mkdir(parents=True, exist_ok=True)
 
-    # Archive current extracted content using the version already present in current/
-    current_version = get_current_version(current_dir)
-    if current_version:
-        archived_to = archive_extracted_only(printer_dir, current_version)
-        if archived_to:
-            print(f"[INFO] {name}: archived extracted firmware -> {archived_to}")
-
-    # Ensure current/ is empty before downloading/extracting the new firmware
+    # Always start with a clean current/ before downloading a new version
     clear_current_dir(current_dir)
 
     # Download to current/firmware.zip
@@ -110,13 +98,18 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
     try:
         safe_extract_zip(zip_path, current_dir)
         removed = remove_txt_files(current_dir)
-
         zip_path.unlink(missing_ok=True)
-        (current_dir / "VERSION").write_text(new_version, encoding="utf-8")
-
     except Exception as e:
         print(f"[WARN] {name}: extract/cleanup failed ({type(e).__name__}: {e})")
         return
+
+    # Save a versioned snapshot immediately after successful extraction
+    archived_to = snapshot_current_to_old(printer_dir, version)
+    if archived_to:
+        print(f"[INFO] {name}: snapshotted extracted firmware -> {archived_to}")
+
+    # Mark what version is currently active in current/
+    (current_dir / "VERSION").write_text(version, encoding="utf-8")
 
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     insert_firmware(
@@ -135,6 +128,7 @@ def check_one(printer: dict, session: requests.Session, db_con, base_data: Path)
     print(f"       url: {chosen_url}")
     print(f"       zip: {zip_path} ({size} bytes) sha256={digest[:12]}...")
     print(f"       extracted: {current_dir} (removed {removed} .txt file(s))")
+
 
 def run_once(config: Path, db_path: Path, data_dir: Path, rate_limit_sec: float = 1.0) -> None:
     start = time.monotonic()
@@ -162,6 +156,7 @@ def run_once(config: Path, db_path: Path, data_dir: Path, rate_limit_sec: float 
 
     print(f"[INFO] run completed in {' '.join(parts)}")
 
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="printers.yaml")
@@ -185,5 +180,7 @@ def main() -> None:
         run_once(config, db_path, data_dir, rate_limit_sec=args.rate_limit)
         time.sleep(args.interval)
 
+
 if __name__ == "__main__":
     main()
+    
