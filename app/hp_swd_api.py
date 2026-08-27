@@ -1,4 +1,4 @@
-import re
+
 import requests
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -174,62 +174,88 @@ def discover_firmware_urls_swd(
     lc: str = "sv",
     debug: bool = False,
 ) -> List[str]:
-    locale = f"{cc}-{lc}"
-
     session.headers.setdefault("Referer", "https://support.hp.com/")
     session.headers.setdefault("Origin", "https://support.hp.com")
     session.headers.setdefault("Accept", "application/json, text/plain, */*")
 
-    # 1) Product identifiers (try PDP first, then warranty/specs)
-    prod = _get_product_oids_from_pdp(session, locale=locale, series_oid=series_oid)
-    if not prod.get("productNumberOid"):
-        prod2 = _get_product_oids_from_warranty_specs(session, cc=cc, lc=lc, series_oid=series_oid)
-        # merge, prefer warranty/specs values
-        prod = {**prod, **{k: v for k, v in prod2.items() if v not in (None, "", "null")}}
-
-    if debug:
-        print("[DBG] product oids:", prod)
-
-    if not prod.get("productNumberOid"):
-        if debug:
-            print("[DBG] Still missing productNumberOid even after warranty/specs")
-        return []
-
-    # 2) OS version data
+    # 1) Get OS/platform information directly from the series OID.
     os_url = f"{BASE}/wcc-services/swd-v2/osVersionData"
-    os_json = _request_json(session, "GET", os_url, params={"cc": cc, "lc": lc, "productOid": str(series_oid)})
+    os_json = _request_json(
+        session,
+        "GET",
+        os_url,
+        params={
+            "cc": cc,
+            "lc": lc,
+            "productOid": str(series_oid),
+        },
+    )
+
     platform_id, platform_name, version_id = _pick_os_version(os_json)
 
     if debug:
-        print("[DBG] picked:", platform_name, platform_id, "versionId:", version_id)
+        print(
+            "[DBG] picked:",
+            platform_name,
+            platform_id,
+            "versionId:",
+            version_id,
+        )
 
     if not (platform_id and platform_name and version_id):
+        if debug:
+            print("[DBG] Missing OS/platform/version information")
         return []
 
-    # 3) EXACT payload from JS for driverDetails
+    # 2) Request driver/firmware list.
+    #
+    # IMPORTANT:
+    # Do NOT add productNumberOid from warranty/specs here. Values such as
+    # "8GS50AR" cause HP's driverDetails endpoint to return HTTP 400 for
+    # a series-level request.
     drv_url = f"{BASE}/wcc-services/swd-v2/driverDetails"
+
     payload = {
-        "productLineCode": prod.get("productLineCode", "") or "",
+        "productLineCode": "",
         "lc": lc,
         "cc": cc,
         "osTMSId": version_id,
         "osName": platform_name,
-        "productNumberOid": prod["productNumberOid"],
-        "productSeriesOid": prod.get("productSeriesOid", series_oid),
+        "productSeriesOid": int(series_oid),
         "platformId": platform_id,
     }
-    if not prod.get("seriesContext", True) and prod.get("productNameOid"):
-        payload["productNameOid"] = prod["productNameOid"]
 
-    r = session.post(drv_url, json=payload, timeout=(10, 60))
     if debug:
-        print("[DBG] driverDetails status:", r.status_code, "len:", len(r.content))
+        print("[DBG] driverDetails payload:", payload)
+
+    r = session.post(
+        drv_url,
+        json=payload,
+        timeout=(10, 60),
+    )
+
+    if debug:
+        print(
+            "[DBG] driverDetails status:",
+            r.status_code,
+            "len:",
+            len(r.content),
+        )
         print("[DBG] driverDetails preview:", r.text[:250])
+
     r.raise_for_status()
 
     drv_json = r.json()
     data = drv_json.get("data")
+
     if data is None:
         return []
 
-    return _extract_firmware_urls(data)
+    urls = _extract_firmware_urls(data)
+
+    if debug:
+        print("[DBG] firmware candidates:", len(urls))
+        for url in urls:
+            print("[DBG]  ", url)
+
+    return urls
